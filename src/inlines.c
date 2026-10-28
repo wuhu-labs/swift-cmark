@@ -424,6 +424,41 @@ static cmark_node *handle_backticks(subject *subj, int options) {
 }
 
 
+// Decode directly from the inline buffer, never from source-position metadata.
+static int32_t previous_character(subject *subj, bufsize_t *position,
+                                  const int8_t *skip_chars) {
+  if (*position == 0) return 10;
+  bufsize_t end = *position;
+  *position -= 1;
+  while (*position > 0 &&
+         ((peek_at(subj, *position) >> 6) == 2 ||
+          (skip_chars && skip_chars[peek_at(subj, *position)]))) {
+    *position -= 1;
+  }
+  int32_t character;
+  int length = cmark_utf8proc_iterate(subj->input.data + *position,
+                                    end - *position, &character);
+  return length <= 0 || (character < 256 && skip_chars && skip_chars[character])
+             ? 10 : character;
+}
+
+// CJK-friendly amendment to CommonMark 6.2, shared with strikethrough.
+static void cjk_flanking(int32_t before, int32_t before_before, int32_t after,
+                         int *left, int *right, int *punct_before, int *punct_after) {
+  int32_t preceding = 0xFE00 <= before && before <= 0xFE0E ? before_before : before;
+  bool fullwidth_quote = before == 0xFE01 &&
+      (preceding == 0x2018 || preceding == 0x2019 || preceding == 0x201C || preceding == 0x201D);
+  *punct_before = cmark_utf8proc_is_punctuation(preceding);
+  *punct_after = cmark_utf8proc_is_punctuation(after);
+  bool non_cjk_before = *punct_before && !cmark_utf8proc_is_cjk_character(preceding) && !fullwidth_quote;
+  bool non_cjk_after = *punct_after && !cmark_utf8proc_is_cjk_character(after);
+  bool cjk_before = cmark_utf8proc_is_cjk_character(preceding) || (0xE0100 <= before && before <= 0xE01EF);
+  *left = !cmark_utf8proc_is_space(after) &&
+      (!non_cjk_after || cmark_utf8proc_is_space(before) || non_cjk_before || cjk_before);
+  *right = !cmark_utf8proc_is_space(before) &&
+      (!non_cjk_before || cmark_utf8proc_is_space(after) || non_cjk_after || cmark_utf8proc_is_cjk_character(after));
+}
+
 // Scan ***, **, or * and return number scanned, or 0.
 // Advances position.
 static int scan_delims(cmark_parser *parser, subject *subj, unsigned char c,
@@ -435,21 +470,9 @@ static int scan_delims(cmark_parser *parser, subject *subj, unsigned char c,
   int len;
   bool left_flanking, right_flanking;
 
-  if (subj->pos == 0) {
-    before_char = 10;
-  } else {
-    before_char_pos = subj->pos - 1;
-
-    // walk back to the beginning of the UTF_8 sequence:
-    while ((peek_at(subj, before_char_pos) >> 6 == 2 || parser->skip_chars[peek_at(subj, before_char_pos)]) && before_char_pos > 0) {
-      before_char_pos -= 1;
-    }
-    len = cmark_utf8proc_iterate(subj->input.data + before_char_pos,
-                                 subj->pos - before_char_pos, &before_char);
-    if (len == -1 || (before_char < 256 && parser->skip_chars[(unsigned char) before_char])) {
-      before_char = 10;
-    }
-  }
+  before_char_pos = subj->pos;
+  before_char = previous_character(subj, &before_char_pos, parser->skip_chars);
+  int32_t before_before_char = previous_character(subj, &before_char_pos, parser->skip_chars);
 
   if (c == '\'' || c == '"') {
     numdelims++;
@@ -476,17 +499,14 @@ static int scan_delims(cmark_parser *parser, subject *subj, unsigned char c,
     }
   }
 
-  left_flanking = numdelims > 0 && !cmark_utf8proc_is_space(after_char) &&
-                  (!cmark_utf8proc_is_punctuation(after_char) ||
-                   cmark_utf8proc_is_space(before_char) ||
-                   cmark_utf8proc_is_punctuation(before_char));
-  right_flanking = numdelims > 0 && !cmark_utf8proc_is_space(before_char) &&
-                   (!cmark_utf8proc_is_punctuation(before_char) ||
-                    cmark_utf8proc_is_space(after_char) ||
-                    cmark_utf8proc_is_punctuation(after_char));
+  int left, right, punct_before, punct_after;
+  cjk_flanking(before_char, before_before_char, after_char,
+               &left, &right, &punct_before, &punct_after);
+  left_flanking = numdelims > 0 && left;
+  right_flanking = numdelims > 0 && right;
   if (c == '_') {
     *can_open = left_flanking &&
-                (!right_flanking || cmark_utf8proc_is_punctuation(before_char));
+                (!right_flanking || punct_before);
     *can_close = right_flanking &&
                  (!left_flanking || cmark_utf8proc_is_punctuation(after_char));
   } else if (c == '\'' || c == '"') {
@@ -1923,22 +1943,9 @@ int cmark_inline_parser_scan_delimiters(cmark_inline_parser *parser,
   int32_t after_char = 0;
   int32_t before_char = 0;
   int len;
-  bool space_before, space_after;
-
-  if (parser->pos == 0) {
-    before_char = 10;
-  } else {
-    before_char_pos = parser->pos - 1;
-    // walk back to the beginning of the UTF_8 sequence:
-    while (peek_at(parser, before_char_pos) >> 6 == 2 && before_char_pos > 0) {
-      before_char_pos -= 1;
-    }
-    len = cmark_utf8proc_iterate(parser->input.data + before_char_pos,
-                                 parser->pos - before_char_pos, &before_char);
-    if (len == -1) {
-      before_char = 10;
-    }
-  }
+  before_char_pos = parser->pos;
+  before_char = previous_character(parser, &before_char_pos, NULL);
+  int32_t before_before_char = previous_character(parser, &before_char_pos, NULL);
 
   while (peek_char(parser) == c && numdelims < max_delims) {
     numdelims++;
@@ -1951,15 +1958,10 @@ int cmark_inline_parser_scan_delimiters(cmark_inline_parser *parser,
     after_char = 10;
   }
 
-  *punct_before = cmark_utf8proc_is_punctuation(before_char);
-  *punct_after = cmark_utf8proc_is_punctuation(after_char);
-  space_before = cmark_utf8proc_is_space(before_char) != 0;
-  space_after = cmark_utf8proc_is_space(after_char) != 0;
-
-  *left_flanking = numdelims > 0 && !cmark_utf8proc_is_space(after_char) &&
-                  !(*punct_after && !space_before && !*punct_before);
-  *right_flanking = numdelims > 0 && !cmark_utf8proc_is_space(before_char) &&
-                  !(*punct_before && !space_after && !*punct_after);
+  cjk_flanking(before_char, before_before_char, after_char,
+               left_flanking, right_flanking, punct_before, punct_after);
+  *left_flanking = numdelims > 0 && *left_flanking;
+  *right_flanking = numdelims > 0 && *right_flanking;
 
   return numdelims;
 }

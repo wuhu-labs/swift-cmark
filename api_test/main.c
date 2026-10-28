@@ -1635,6 +1635,16 @@ static void table_spans(test_batch_runner *runner) {
   }
 }
 
+static void cjk_friendly_emphasis(test_batch_runner *runner) {
+  test_md_to_html(runner, "**空间（space）**是", "<p><strong>空间（space）</strong>是</p>\n", "CJK closing delimiter");
+  test_md_to_html(runner, "太郎は**\"Hello\"**といった", "<p>太郎は<strong>&quot;Hello&quot;</strong>といった</p>\n", "CJK opening and closing delimiters");
+  test_md_to_html(runner, "**“︁Git”︁**Hub", "<p><strong>“︁Git”︁</strong>Hub</p>\n", "fullwidth variation sequence");
+  test_md_to_html(runner, "a**a𝜵**a", "<p>a**a𝜵**a</p>\n", "non-BMP symbols remain punctuation");
+  test_md_to_html(runner, "> foo\nbar **baz**", "<blockquote>\n<p>foo\nbar <strong>baz</strong></p>\n</blockquote>\n", "lazy continuation");
+  test_md_to_html(runner, " foo\n*bar*", "<p>foo\n<em>bar</em></p>\n", "indented continuation");
+  test_md_to_html(runner, "1. foo\n**中文（a）**是", "<ol>\n<li>foo\n<strong>中文（a）</strong>是</li>\n</ol>\n", "list lazy continuation");
+}
+
 int main() {
   int retval;
   test_batch_runner *runner = test_batch_runner_new();
@@ -1673,6 +1683,7 @@ int main() {
   parser_interrupt(runner);
   strikethrough_multiline_sourcepos(runner);
   table_spans(runner);
+  cjk_friendly_emphasis(runner);
 
   test_print_summary(runner);
   retval = test_ok(runner) ? 0 : 1;
