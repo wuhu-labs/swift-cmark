@@ -1636,6 +1636,21 @@ static void table_spans(test_batch_runner *runner) {
 }
 
 static void cjk_friendly_emphasis(test_batch_runner *runner) {
+  cmark_gfm_core_extensions_ensure_registered();
+  cmark_parser *parser = cmark_parser_new(CMARK_OPT_DEFAULT);
+  cmark_parser_attach_syntax_extension(parser, cmark_find_syntax_extension("autolink"));
+  const char *markdown = "http://🍄.ga/ https://☃.net";
+  cmark_parser_feed(parser, markdown, strlen(markdown));
+  cmark_node *document = cmark_parser_finish(parser);
+  char *html = cmark_render_html(document, CMARK_OPT_DEFAULT,
+      cmark_parser_get_syntax_extensions(parser));
+  STR_EQ(runner, html,
+      "<p><a href=\"http://%F0%9F%8D%84.ga/\">http://🍄.ga/</a> "
+      "<a href=\"https://%E2%98%83.net\">https://☃.net</a></p>\n",
+      "symbol domains retain upstream autolink behavior");
+  free(html);
+  cmark_node_free(document);
+  cmark_parser_free(parser);
   const char *prefixes[] = {"他说：", "，", "。", "「", "（"};
   for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); ++i) {
     char markdown[128], expected[128];

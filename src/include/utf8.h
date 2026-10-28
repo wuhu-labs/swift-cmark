@@ -29,6 +29,9 @@ CMARK_GFM_EXPORT
 int cmark_utf8proc_is_punctuation(int32_t uc);
 
 CMARK_GFM_EXPORT
+int cmark_utf8proc_is_punctuation_or_symbol(int32_t uc);
+
+CMARK_GFM_EXPORT
 int cmark_utf8proc_is_cjk_character(int32_t uc);
 
 #ifdef __cplusplus

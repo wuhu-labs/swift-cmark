@@ -448,8 +448,8 @@ static void cjk_flanking(int32_t before, int32_t before_before, int32_t after,
   int32_t preceding = 0xFE00 <= before && before <= 0xFE0E ? before_before : before;
   bool fullwidth_quote = before == 0xFE01 &&
       (preceding == 0x2018 || preceding == 0x2019 || preceding == 0x201C || preceding == 0x201D);
-  *punct_before = cmark_utf8proc_is_punctuation(preceding);
-  *punct_after = cmark_utf8proc_is_punctuation(after);
+  *punct_before = cmark_utf8proc_is_punctuation_or_symbol(preceding);
+  *punct_after = cmark_utf8proc_is_punctuation_or_symbol(after);
   bool non_cjk_before = *punct_before && !cmark_utf8proc_is_cjk_character(preceding) && !fullwidth_quote;
   bool non_cjk_after = *punct_after && !cmark_utf8proc_is_cjk_character(after);
   bool cjk_before = cmark_utf8proc_is_cjk_character(preceding) || (0xE0100 <= before && before <= 0xE01EF);
@@ -501,8 +501,8 @@ static int scan_delims(cmark_parser *parser, subject *subj, unsigned char c,
 
   int left, right, punct_before, punct_after;
   if (c == '\'' || c == '"') {
-    punct_before = cmark_utf8proc_is_punctuation(before_char);
-    punct_after = cmark_utf8proc_is_punctuation(after_char);
+    punct_before = cmark_utf8proc_is_punctuation_or_symbol(before_char);
+    punct_after = cmark_utf8proc_is_punctuation_or_symbol(after_char);
     left = !cmark_utf8proc_is_space(after_char) &&
         (!punct_after || cmark_utf8proc_is_space(before_char) || punct_before);
     right = !cmark_utf8proc_is_space(before_char) &&
@@ -517,7 +517,7 @@ static int scan_delims(cmark_parser *parser, subject *subj, unsigned char c,
     *can_open = left_flanking &&
                 (!right_flanking || punct_before);
     *can_close = right_flanking &&
-                 (!left_flanking || cmark_utf8proc_is_punctuation(after_char));
+                 (!left_flanking || cmark_utf8proc_is_punctuation_or_symbol(after_char));
   } else if (c == '\'' || c == '"') {
     *can_open = left_flanking && !right_flanking &&
 	         before_char != ']' && before_char != ')';
