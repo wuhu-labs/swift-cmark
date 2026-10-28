@@ -500,8 +500,17 @@ static int scan_delims(cmark_parser *parser, subject *subj, unsigned char c,
   }
 
   int left, right, punct_before, punct_after;
-  cjk_flanking(before_char, before_before_char, after_char,
-               &left, &right, &punct_before, &punct_after);
+  if (c == '\'' || c == '"') {
+    punct_before = cmark_utf8proc_is_punctuation(before_char);
+    punct_after = cmark_utf8proc_is_punctuation(after_char);
+    left = !cmark_utf8proc_is_space(after_char) &&
+        (!punct_after || cmark_utf8proc_is_space(before_char) || punct_before);
+    right = !cmark_utf8proc_is_space(before_char) &&
+        (!punct_before || cmark_utf8proc_is_space(after_char) || punct_after);
+  } else {
+    cjk_flanking(before_char, before_before_char, after_char,
+                 &left, &right, &punct_before, &punct_after);
+  }
   left_flanking = numdelims > 0 && left;
   right_flanking = numdelims > 0 && right;
   if (c == '_') {

@@ -1636,6 +1636,16 @@ static void table_spans(test_batch_runner *runner) {
 }
 
 static void cjk_friendly_emphasis(test_batch_runner *runner) {
+  const char *prefixes[] = {"他说：", "，", "。", "「", "（"};
+  for (size_t i = 0; i < sizeof(prefixes) / sizeof(prefixes[0]); ++i) {
+    char markdown[128], expected[128];
+    snprintf(markdown, sizeof(markdown), "%s\"你好\"。", prefixes[i]);
+    snprintf(expected, sizeof(expected), "<p>%s“你好”。</p>\n", prefixes[i]);
+    char *html = cmark_markdown_to_html(markdown, strlen(markdown),
+        CMARK_OPT_VALIDATE_UTF8 | CMARK_OPT_SMART);
+    STR_EQ(runner, html, expected, "smart quotes retain standard flanking after CJK punctuation");
+    free(html);
+  }
   test_md_to_html(runner, "**空间（space）**是", "<p><strong>空间（space）</strong>是</p>\n", "CJK closing delimiter");
   test_md_to_html(runner, "太郎は**\"Hello\"**といった", "<p>太郎は<strong>&quot;Hello&quot;</strong>といった</p>\n", "CJK opening and closing delimiters");
   test_md_to_html(runner, "**“︁Git”︁**Hub", "<p><strong>“︁Git”︁</strong>Hub</p>\n", "fullwidth variation sequence");
